@@ -14,6 +14,10 @@
         ".write": "auth != null && ((!data.exists() && (root.child('users').child(auth.uid).child('role').val() == 'DirectShowroomManager' || root.child('users').child(auth.uid).child('role').val() == 'DirectShowroomStaff')) || (data.exists() && (root.child('users').child(auth.uid).child('role').val() == 'HeadOfOperations' || root.child('users').child(auth.uid).child('role').val() == 'MainDirector' || root.child('users').child(auth.uid).child('role').val() == 'Admin')))"
       }
     },
+    "drstock": {
+      ".read": "auth.uid != null && (root.child('users').child(auth.uid).child('role').val() == 'DirectRepresentative' || root.child('users').child(auth.uid).child('role').val() == 'Admin' || root.child('users').child(auth.uid).child('role').val() == 'HeadOfOperations')",
+      ".write": "auth.uid != null && (root.child('users').child(auth.uid).child('role').val() == 'DirectRepresentative' || root.child('users').child(auth.uid).child('role').val() == 'Admin' || root.child('users').child(auth.uid).child('role').val() == 'HeadOfOperations')"
+    },
     "distributorReqs": {
       ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() == 'Distributor' || root.child('users').child(auth.uid).child('role').val() == 'Admin' || query.orderByChild == 'requestedById' && query.equalTo == auth.uid)",
       ".indexOn": ["requestedById"],
@@ -90,8 +94,6 @@
         ".read": "auth != null && auth.uid == $uid",
         ".write": "auth != null"
       }
-    },
-    ".read": "auth != null",
-    ".write": "auth != null"
+    }
   }
 }
