@@ -1,0 +1,97 @@
+{
+  "rules": {
+    "users": {
+      "$uid": {
+        ".read": "auth != null && (auth.uid == $uid || root.child('users').child(auth.uid).child('role').val() == 'Admin' || root.child('users').child(auth.uid).child('role').val() == 'HeadOfOperations' || root.child('users').child(auth.uid).child('role').val() == 'MainDirector')",
+        ".write": "auth != null && (auth.uid == $uid || root.child('users').child(auth.uid).child('role').val() == 'Admin')"
+      }
+    },
+    "dsReqs": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() == 'HeadOfOperations' || root.child('users').child(auth.uid).child('role').val() == 'MainDirector' || root.child('users').child(auth.uid).child('role').val() == 'Admin' || root.child('users').child(auth.uid).child('role').val() == 'DirectShowroomManager' || query.orderByChild == 'requestedById' && query.equalTo == auth.uid)",
+      ".indexOn": ["requestedById"],
+      "$requestId": {
+        ".read": "auth != null && (data.child('requestedById').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'HeadOfOperations' || root.child('users').child(auth.uid).child('role').val() == 'MainDirector' || root.child('users').child(auth.uid).child('role').val() == 'Admin')",
+        ".write": "auth != null && ((!data.exists() && (root.child('users').child(auth.uid).child('role').val() == 'DirectShowroomManager' || root.child('users').child(auth.uid).child('role').val() == 'DirectShowroomStaff')) || (data.exists() && (root.child('users').child(auth.uid).child('role').val() == 'HeadOfOperations' || root.child('users').child(auth.uid).child('role').val() == 'MainDirector' || root.child('users').child(auth.uid).child('role').val() == 'Admin')))"
+      }
+    },
+    "distributorReqs": {
+      ".read": "auth != null && (root.child('users').child(auth.uid).child('role').val() == 'Distributor' || root.child('users').child(auth.uid).child('role').val() == 'Admin' || query.orderByChild == 'requestedById' && query.equalTo == auth.uid)",
+      ".indexOn": ["requestedById"],
+      "$requestId": {
+        ".read": "auth != null && (data.child('requestedById').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'Distributor' || root.child('users').child(auth.uid).child('role').val() == 'Admin')",
+        ".write": "auth != null && ((!data.exists() && root.child('users').child(auth.uid).child('role').val() == 'DistributorRep') || (data.exists() && root.child('users').child(auth.uid).child('role').val() == 'Distributor'))"
+      }
+    },
+    "distributorRepRequests": {
+      "$distributorId": {
+        ".read": "auth != null && (auth.uid == $distributorId || root.child('users').child(auth.uid).child('role').val() == 'Admin')",
+        ".write": "auth != null && (auth.uid == $distributorId || root.child('users').child(auth.uid).child('role').val() == 'Admin')",
+        "$requestId": {
+          ".read": "auth != null && (auth.uid == $distributorId || data.child('requestedBy').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'Admin')",
+          ".write": "auth != null && (auth.uid == $distributorId || data.child('requestedBy').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'Admin')"
+        }
+      }
+    },
+    "distributorStock": {
+      "users": {
+        "$userId": {
+          ".read": "auth != null && (auth.uid == $userId || root.child('users').child(auth.uid).child('role').val() == 'Admin')",
+          ".write": "auth != null && (auth.uid == $userId || root.child('users').child(auth.uid).child('role').val() == 'Admin')"
+        }
+      }
+    },
+    "distributorInventory": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "salesRequests": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$requestId": {
+        ".read": "auth != null",
+        ".write": "auth != null && (!data.exists() || data.child('requestedBy').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'HeadOfOperations' || root.child('users').child(auth.uid).child('role').val() == 'MainDirector' || root.child('users').child(auth.uid).child('role').val() == 'Admin')"
+      }
+    },
+    "invoices": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$invoiceId": {
+        ".read": "auth != null",
+        ".write": "auth != null && (!data.exists() || data.child('createdBy').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'HeadOfOperations' || root.child('users').child(auth.uid).child('role').val() == 'MainDirector' || root.child('users').child(auth.uid).child('role').val() == 'Admin')"
+      }
+    },
+    "customers": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      ".indexOn": ["name", "totalPurchases", "lastPurchase"]
+    },
+    "salesActivities": {
+      ".read": "auth != null",
+      ".write": "auth != null"
+    },
+    "customerInvoices": {
+      ".read": "auth != null",
+      ".write": "auth != null",
+      "$invoiceId": {
+        ".read": "auth != null",
+        ".write": "auth != null && (!data.exists() || data.child('createdBy').val() == auth.uid || root.child('users').child(auth.uid).child('role').val() == 'HeadOfOperations' || root.child('users').child(auth.uid).child('role').val() == 'MainDirector' || root.child('users').child(auth.uid).child('role').val() == 'Admin')"
+      }
+    },
+    "finishedGoodsPackagedInventory": {
+      ".read": "auth != null",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() == 'FinishedGoodsStoreManager' || root.child('users').child(auth.uid).child('role').val() == 'HeadOfOperations' || root.child('users').child(auth.uid).child('role').val() == 'MainDirector' || root.child('users').child(auth.uid).child('role').val() == 'Admin')"
+    },
+    "productionProducts": {
+      ".read": "auth != null",
+      ".write": "auth != null && (root.child('users').child(auth.uid).child('role').val() == 'ProductionManager' || root.child('users').child(auth.uid).child('role').val() == 'HeadOfOperations' || root.child('users').child(auth.uid).child('role').val() == 'MainDirector' || root.child('users').child(auth.uid).child('role').val() == 'Admin')"
+    },
+    "notifications": {
+      "$uid": {
+        ".read": "auth != null && auth.uid == $uid",
+        ".write": "auth != null"
+      }
+    },
+    ".read": "auth != null",
+    ".write": "auth != null"
+  }
+}
