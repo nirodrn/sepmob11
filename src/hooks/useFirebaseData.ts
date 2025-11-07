@@ -40,9 +40,13 @@ export function useFirebaseData<T>(path: string, refreshKey: number = 0): { data
 }
 
 // Hook for performing actions on Firebase Realtime Database
-export function useFirebaseActions(basePath: string) {
+export function useFirebaseActions(basePath: string = '') {
+  const getFullPath = (path: string) => {
+    return [basePath, path].filter(Boolean).join('/');
+  };
+
   const addData = useCallback(async (path: string, data: any) => {
-    const fullPath = path ? `${basePath}/${path}` : basePath;
+    const fullPath = getFullPath(path);
     const dbRef = ref(database, fullPath);
     const newRef = push(dbRef);
     await set(newRef, { ...data, createdAt: new Date().toISOString(), id: newRef.key });
@@ -50,17 +54,20 @@ export function useFirebaseActions(basePath: string) {
   }, [basePath]);
 
   const setData = useCallback(async (path: string, data: any) => {
-    const dbRef = ref(database, `${basePath}/${path}`);
+    const fullPath = getFullPath(path);
+    const dbRef = ref(database, fullPath);
     await set(dbRef, data);
   }, [basePath]);
 
   const updateData = useCallback(async (path: string, data: any) => {
-    const dbRef = ref(database, `${basePath}/${path}`);
+    const fullPath = getFullPath(path);
+    const dbRef = ref(database, fullPath);
     await update(dbRef, data);
   }, [basePath]);
 
   const deleteData = useCallback(async (path: string) => {
-    const dbRef = ref(database, `${basePath}/${path}`);
+    const fullPath = getFullPath(path);
+    const dbRef = ref(database, fullPath);
     await remove(dbRef);
   }, [basePath]);
 

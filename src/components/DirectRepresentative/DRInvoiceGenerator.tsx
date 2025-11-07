@@ -128,7 +128,7 @@ export function DRInvoiceGenerator() {
         if (!invoiceId) throw new Error("Failed to save the invoice.");
 
         const userStockEntries = drStockData.users?.[userData.id]?.entries;
-        if (!userStockEntries) throw new Error("Could not find user's stock entries.");
+        if (!userStockEntries) throw new Error("Could not find user\'s stock entries.");
 
         const stockUpdates: { [path: string]: any } = {};
         for (const item of finalInvoiceData.items) {
@@ -155,7 +155,7 @@ export function DRInvoiceGenerator() {
         await updateData('drstock', stockUpdates);
 
         alert('Invoice generated and stock updated successfully!');
-        navigate('/dr-inventory'); // Navigate to inventory to see updated stock
+        navigate('/inventory'); // Navigate to inventory to see updated stock
 
     } catch (error) {
         console.error('Invoice release failed:', error);
