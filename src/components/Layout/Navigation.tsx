@@ -31,6 +31,12 @@ const navigationItems: NavItem[] = [
     roles: ['DirectRepresentative']
   },
   {
+    name: 'My Invoices',
+    href: '/my-invoices',
+    icon: FileText,
+    roles: ['DirectRepresentative']
+  },
+  {
     name: 'Product Requests',
     href: '/distributor/requests',
     icon: ShoppingCart, // Corrected from Shoppingcart

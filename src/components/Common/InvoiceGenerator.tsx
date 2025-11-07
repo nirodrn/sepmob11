@@ -94,23 +94,16 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({
 
   const handlePrint = () => {
     const printContent = generatePrintHTML();
-    const iframe = document.createElement('iframe');
-    iframe.style.position = 'absolute';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
-    iframe.style.border = '0';
-    iframe.style.left = '-9999px';
-    document.body.appendChild(iframe);
-    const iframeDoc = iframe.contentWindow?.document;
-    if (iframeDoc) {
-        iframeDoc.open();
-        iframeDoc.write(printContent);
-        iframeDoc.close();
-        setTimeout(() => {
-            iframe.contentWindow?.focus();
-            iframe.contentWindow?.print();
-            document.body.removeChild(iframe);
-        }, 250);
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+        printWindow.document.write(printContent);
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(function() {
+            printWindow.print();
+        }, 500);
+    } else {
+        alert('Could not open print window. Please check your popup blocker settings.');
     }
   };
 

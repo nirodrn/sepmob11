@@ -33,6 +33,7 @@ import DistributorInvoicesMain from './pages/Distributor/DistributorInvoicesMain
 
 import { DRRequests } from './pages/DirectRepresentative/DRRequests';
 import DRInvoicesPage from './pages/DirectRepresentative/DRInvoicesPage';
+import { DRInvoiceHistory } from './pages/DirectRepresentative/DRInvoiceHistory'; 
 import { RoleBasedInventory } from './pages/RoleBasedInventory';
 // Role-specific dashboards
 import { DRDashboard } from './pages/DirectRepresentative/DRDashboard';
@@ -97,6 +98,7 @@ function App() {
 
             <Route path="/dashboard" element={<ProtectedPage><RoleBasedDashboard /></ProtectedPage>} />
             <Route path="/invoices" element={<ProtectedPage><Invoices /></ProtectedPage>} />
+            <Route path="/my-invoices" element={<ProtectedPage><DRInvoiceHistory /></ProtectedPage>} />
             <Route path="/sales" element={<ProtectedPage><SalesTracking /></ProtectedPage>} />
             <Route path="/inventory" element={<ProtectedPage><RoleBasedInventory /></ProtectedPage>} />
             <Route path="/customers" element={<ProtectedPage><CustomerManagement /></ProtectedPage>} />
@@ -114,7 +116,7 @@ function App() {
             <Route path="/distributor" element={<ProtectedPage><Outlet /></ProtectedPage>}>
               <Route path="requests" element={<DistributorRequests />} />
               <Route path="representatives" element={<DistributorRepManagement />} />
-              <Route path="rep-requests" element={<DistributorRepManagementPage />} />
+              <Rout  path="rep-requests" element={<DistributorRepManagementPage />} />
               <Route path="rep-dispatch" element={<DistributorRepDispatch />} />
               <Route path="stock-dispatch" element={<DistributorStockDispatch />} />
               <Route path="invoices" element={<DistributorInvoicesMain />} />
