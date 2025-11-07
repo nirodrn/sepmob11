@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Printer, Plus, Trash2 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Printer, Plus, Trash2, Loader } from 'lucide-react';
 import sewanalogoImg from '../../assets/sewanalogo.png';
 
 const LOGO_FALLBACK = 'https://i.ibb.co/fjSFngM/sewanalogo.png';
 const ISO_CERT = 'https://i.ibb.co/DfZgp9p5/iso.png';
 const GMP_CERT = 'https://i.ibb.co/d4010gz5/gmp-certification-services.jpg';
 
+// --- Interfaces ---
 interface InvoiceItem {
   itemCode: string;
   description: string;
@@ -19,125 +20,97 @@ interface InvoiceData {
   invoiceNo: string;
   orderNo: string;
   paymentMethod: string;
-  billTo: {
-    name: string;
-    address: string;
-    phone: string;
-  };
+  billTo: { name: string; address: string; phone: string; };
   items: InvoiceItem[];
   discount: number;
 }
 
 interface InvoiceGeneratorProps {
   initialData?: Partial<InvoiceData>;
-  onSave?: (data: InvoiceData) => void;
+  onSave?: (data: InvoiceData) => Promise<void> | void;
   readOnly?: boolean;
+  onSaveLoading?: boolean;
 }
 
 const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({
   initialData,
   onSave,
   readOnly = false,
+  onSaveLoading = false,
 }) => {
-  const hasTriggeredPrint = useRef(false);
   const [logoSrc, setLogoSrc] = useState(sewanalogoImg);
   const [invoiceData, setInvoiceData] = useState<InvoiceData>({
-    date: initialData?.date || new Date().toISOString().split('T')[0],
-    invoiceNo: initialData?.invoiceNo || '',
-    orderNo: initialData?.orderNo || '',
-    paymentMethod: initialData?.paymentMethod || 'Cash',
-    billTo: initialData?.billTo || {
-      name: '',
-      address: '',
-      phone: '',
-    },
-    items: initialData?.items || [
-      { itemCode: '', description: '', quantity: 0, unitPrice: 0, amount: 0 },
-    ],
-    discount: initialData?.discount || 0,
+    date: new Date().toISOString().split('T')[0],
+    invoiceNo: '',
+    orderNo: '',
+    paymentMethod: 'Cash',
+    billTo: { name: '', address: '', phone: '' },
+    items: [{ itemCode: '', description: '', quantity: 1, unitPrice: 0, amount: 0 }],
+    discount: 0,
   });
 
-  const calculateAmount = (quantity: number, unitPrice: number): number => {
-    return quantity * unitPrice;
-  };
-
-  const calculateSubtotal = (): number => {
-    return invoiceData.items.reduce((sum, item) => sum + item.amount, 0);
-  };
-
-  const calculateNetTotal = (): number => {
-    const subtotal = calculateSubtotal();
-    const discountAmount = subtotal * (invoiceData.discount / 100);
-    return subtotal - discountAmount;
-  };
-
-  const handleItemChange = (
-    index: number,
-    field: keyof InvoiceItem,
-    value: string | number
-  ) => {
-    const updatedItems = [...invoiceData.items];
-    updatedItems[index] = {
-      ...updatedItems[index],
-      [field]: value,
-    };
-
-    if (field === 'quantity' || field === 'unitPrice') {
-      updatedItems[index].amount = calculateAmount(
-        updatedItems[index].quantity,
-        updatedItems[index].unitPrice
-      );
+  useEffect(() => {
+    if (initialData) {
+      setInvoiceData(prev => ({
+        ...prev,
+        ...initialData,
+        date: initialData.date || prev.date,
+        items: initialData.items && initialData.items.length > 0 ? initialData.items : prev.items,
+        billTo: initialData.billTo || prev.billTo,
+      }));
     }
+  }, [initialData]);
 
+  // --- Calculation Functions ---
+  const calculateAmount = (quantity: number, unitPrice: number): number => quantity * unitPrice;
+  const calculateSubtotal = (): number => invoiceData.items.reduce((sum, item) => sum + item.amount, 0);
+  const calculateNetTotal = (): number => calculateSubtotal() * (1 - invoiceData.discount / 100);
+
+  // --- Event Handlers ---
+  const handleItemChange = (index: number, field: keyof InvoiceItem, value: string | number) => {
+    if(readOnly) return;
+    const updatedItems = [...invoiceData.items];
+    const item = { ...updatedItems[index], [field]: value };
+    if (field === 'quantity' || field === 'unitPrice') {
+      item.amount = calculateAmount(Number(item.quantity), Number(item.unitPrice));
+    }
+    updatedItems[index] = item;
     setInvoiceData({ ...invoiceData, items: updatedItems });
   };
 
   const addItem = () => {
-    setInvoiceData({
-      ...invoiceData,
-      items: [
-        ...invoiceData.items,
-        { itemCode: '', description: '', quantity: 0, unitPrice: 0, amount: 0 },
-      ],
-    });
+    if(readOnly) return;
+    setInvoiceData({ ...invoiceData, items: [...invoiceData.items, { itemCode: '', description: '', quantity: 1, unitPrice: 0, amount: 0 }] });
   };
 
   const removeItem = (index: number) => {
+    if(readOnly) return;
     if (invoiceData.items.length > 1) {
-      const updatedItems = invoiceData.items.filter((_, i) => i !== index);
-      setInvoiceData({ ...invoiceData, items: updatedItems });
+      setInvoiceData({ ...invoiceData, items: invoiceData.items.filter((_, i) => i !== index) });
     }
   };
 
-  const handlePrint = async () => {
-    // Create a hidden iframe for printing
+  const handleSave = () => onSave && onSave(invoiceData);
+
+  const handlePrint = () => {
+    const printContent = generatePrintHTML();
     const iframe = document.createElement('iframe');
-    iframe.style.position = 'fixed';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
+    iframe.style.position = 'absolute';
     iframe.style.width = '0';
     iframe.style.height = '0';
-    iframe.style.border = 'none';
+    iframe.style.border = '0';
+    iframe.style.left = '-9999px';
     document.body.appendChild(iframe);
-
-    const printContent = generatePrintHTML();
-    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-
+    const iframeDoc = iframe.contentWindow?.document;
     if (iframeDoc) {
-      iframeDoc.open();
-      iframeDoc.write(printContent);
-      iframeDoc.close();
-
-      // Wait for content to load
-      setTimeout(() => {
-        iframe.contentWindow?.focus();
-        iframe.contentWindow?.print();
-
-        // Remove iframe after printing
+        iframeDoc.open();
+        iframeDoc.write(printContent);
+        iframeDoc.close();
         setTimeout(() => {
-          document.body.removeChild(iframe);
-        }, 1000);
-      }, 1000);
+            iframe.contentWindow?.focus();
+            iframe.contentWindow?.print();
+            document.body.removeChild(iframe);
+        }, 250);
     }
   };
 
@@ -145,753 +118,119 @@ const InvoiceGenerator: React.FC<InvoiceGeneratorProps> = ({
     const subtotal = calculateSubtotal();
     const discountAmount = subtotal * (invoiceData.discount / 100);
     const netTotal = calculateNetTotal();
-
     return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>Invoice ${invoiceData.invoiceNo}</title>
-        <style>
-          @page {
-            size: A4;
-            margin: 1cm;
-          }
-          * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-          }
-          body {
-            font-family: Arial, sans-serif;
-            font-size: 12pt;
-            line-height: 1.4;
-            color: #000;
-            background: white;
-            padding: 20px;
-          }
-          .invoice-container {
-            max-width: 800px;
-            margin: 0 auto;
-          }
-          header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            padding-bottom: 20px;
-            border-bottom: 2px solid #333;
-            margin-bottom: 20px;
-          }
-          .header-left {
-            display: flex;
-            align-items: flex-start;
-          }
-          .logo {
-            width: 80px;
-            height: 80px;
-            margin-right: 15px;
-            object-fit: contain;
-          }
-          .company-info h1 {
-            font-size: 14pt;
-            font-weight: bold;
-            margin-bottom: 5px;
-          }
-          .company-info p {
-            font-size: 10pt;
-            color: #333;
-            margin: 2px 0;
-          }
-          .certifications {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-          }
-          .certifications img {
-            height: 70px;
-            width: auto;
-            object-fit: contain;
-          }
-          .invoice-title-section {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin: 20px 0;
-          }
-          .invoice-title {
-            font-size: 28pt;
-            font-weight: bold;
-            color: #0891b2;
-          }
-          .invoice-details {
-            text-align: right;
-            font-size: 10pt;
-          }
-          .invoice-details div {
-            margin: 5px 0;
-          }
-          .invoice-details strong {
-            display: inline-block;
-            width: 140px;
-            text-align: right;
-          }
-          .bill-to-section {
-            margin: 20px 0;
-          }
-          .bill-to-header {
-            background-color: #0891b2;
-            color: white;
-            padding: 8px 12px;
-            font-weight: bold;
-            font-size: 11pt;
-          }
-          .bill-to-content {
-            border: 1px solid #ccc;
-            border-top: none;
-            padding: 12px;
-            font-size: 10pt;
-          }
-          .bill-to-content p {
-            margin: 3px 0;
-          }
-          table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 20px 0;
-          }
-          thead {
-            background-color: #0891b2;
-            color: white;
-          }
-          th {
-            padding: 10px;
-            text-align: left;
-            font-size: 10pt;
-            font-weight: bold;
-          }
-          th.text-right {
-            text-align: right;
-          }
-          td {
-            padding: 8px 10px;
-            border-bottom: 1px solid #ddd;
-            font-size: 10pt;
-          }
-          td.text-right {
-            text-align: right;
-          }
-          .totals-section {
-            display: flex;
-            justify-content: flex-end;
-            margin: 20px 0;
-          }
-          .totals-box {
-            width: 300px;
-          }
-          .totals-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 12px;
-            font-size: 10pt;
-          }
-          .totals-row.subtotal {
-            background-color: #f3f4f6;
-          }
-          .totals-row.discount {
-            background-color: #fff;
-          }
-          .totals-row.net-total {
-            background-color: #e5e7eb;
-            font-weight: bold;
-            font-size: 11pt;
-          }
-          footer {
-            margin-top: 60px;
-            padding-top: 20px;
-            border-top: 1px solid #ccc;
-          }
-          .signature-section {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 40px;
-          }
-          .signature-box {
-            width: 30%;
-            text-align: center;
-          }
-          .signature-line {
-            border-top: 1px solid #333;
-            padding-top: 8px;
-            margin-top: 50px;
-            font-size: 10pt;
-          }
-          .thank-you {
-            text-align: center;
-            font-weight: bold;
-            font-size: 11pt;
-            margin-top: 30px;
-          }
-          @media print {
-            body {
-              padding: 0;
-            }
-            .no-print {
-              display: none !important;
-            }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="invoice-container">
-          <header>
-            <div class="header-left">
-              <img src="${LOGO_FALLBACK}" alt="Logo" class="logo" onerror="this.style.display='none'">
-              <div class="company-info">
-                <h1>Sewanagala Ayurvedic Drugs Manufacture (PVT) LTD</h1>
-                <p>Bogaha Junction, Kiriibbanwewa, Sewanagala.</p>
-                <p>Tel: 047-3133540</p>
-                <p>Email: sewanagalaayurwedaya@gmail.com</p>
-                <p>Website: www.sewanagalaayurvedaya.com</p>
-              </div>
-            </div>
-            <div class="certifications">
-              <img src="${ISO_CERT}" alt="ISO Certification" onerror="this.style.display='none'">
-              <img src="${GMP_CERT}" alt="GMP Certification" onerror="this.style.display='none'">
-            </div>
-          </header>
-
-          <div class="invoice-title-section">
-            <div class="invoice-title">INVOICE</div>
-            <div class="invoice-details">
-              <div><strong>DATE :</strong> ${invoiceData.date}</div>
-              <div><strong>INVOICE NO :</strong> ${invoiceData.invoiceNo}</div>
-              <div><strong>ORDER NO :</strong> ${invoiceData.orderNo}</div>
-              <div><strong>PAYMENT METHOD :</strong> ${invoiceData.paymentMethod}</div>
-            </div>
-          </div>
-
-          <div class="bill-to-section">
-            <div class="bill-to-header">BILL TO</div>
-            <div class="bill-to-content">
-              <p><strong>${invoiceData.billTo.name}</strong></p>
-              <p>${invoiceData.billTo.address}</p>
-              <p>${invoiceData.billTo.phone}</p>
-            </div>
-          </div>
-
-          <table>
-            <thead>
-              <tr>
-                <th>ITEM CODE</th>
-                <th>ITEM DESCRIPTION</th>
-                <th>QUANTITY</th>
-                <th>UNIT PRICE</th>
-                <th class="text-right">AMOUNT</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${invoiceData.items.map(item => `
-                <tr>
-                  <td>${item.itemCode}</td>
-                  <td>${item.description}</td>
-                  <td>${item.quantity}</td>
-                  <td>Rs. ${item.unitPrice.toFixed(2)}</td>
-                  <td class="text-right">Rs. ${item.amount.toFixed(2)}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-
-          <div class="totals-section">
-            <div class="totals-box">
-              <div class="totals-row subtotal">
-                <span>SUBTOTAL:</span>
-                <span>Rs. ${subtotal.toFixed(2)}</span>
-              </div>
-              <div class="totals-row discount">
-                <span>DISCOUNT (${invoiceData.discount}%):</span>
-                <span>Rs. ${discountAmount.toFixed(2)}</span>
-              </div>
-              <div class="totals-row net-total">
-                <span>NET TOTAL:</span>
-                <span>Rs. ${netTotal.toFixed(2)}</span>
-              </div>
-            </div>
-          </div>
-
-          <footer>
-            <div class="signature-section">
-              <div class="signature-box">
-                <div class="signature-line">PREPARED BY</div>
-              </div>
-              <div class="signature-box">
-                <div class="signature-line">APPROVED BY</div>
-              </div>
-              <div class="signature-box">
-                <div class="signature-line">CUSTOMER</div>
-              </div>
-            </div>
-            <div class="thank-you">Thank You For Your Business!</div>
-          </footer>
-        </div>
-      </body>
-      </html>
-    `;
+    <!DOCTYPE html><html><head><meta charset="UTF-8"><title>Invoice</title><style>
+    @page { size: A4; margin: 0; }
+    body { margin: 1cm; font-family: 'Helvetica', 'Arial', sans-serif; font-size: 10pt; color: #333; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .invoice-container { width: 100%; margin: auto; }
+    header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 15px; border-bottom: 2px solid #ccc; margin-bottom: 20px; }
+    .company-info h1 { font-size: 18pt; font-weight: bold; margin: 0; }
+    .company-info p { font-size: 9pt; margin: 2px 0; }
+    .invoice-meta { text-align: right; }
+    .bill-to-section { margin-bottom: 20px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+    thead { background: #f0f0f0; }
+    th, td { padding: 8px; text-align: left; border: 1px solid #ddd; }
+    .text-right { text-align: right; }
+    .totals-section { float: right; width: 40%; }
+    footer { position: fixed; bottom: 1cm; width: 100%; text-align: center; font-size: 9pt; color: #777; }
+    </style></head><body><div class="invoice-container">
+      <header><img src="${logoSrc}" alt="Logo" style="width:100px;" onerror="this.onerror=null;this.src='${LOGO_FALLBACK}';"/><div class="company-info"><h1>Sewanagala Ayurvedic Drugs</h1><p>Bogaha Junction, Kiriibbanwewa, Sewanagala.</p></div></header>
+      <div class="invoice-meta"><h2>INVOICE</h2><p><strong>No:</strong> ${invoiceData.invoiceNo}</p><p><strong>Date:</strong> ${invoiceData.date}</p></div>
+      <div class="bill-to-section"><p><strong>Bill To:</strong></p><p>${invoiceData.billTo.name}</p><p>${invoiceData.billTo.address}</p></div>
+      <table><thead><tr><th>Item</th><th>Qty</th><th>Price</th><th class="text-right">Total</th></tr></thead><tbody>${invoiceData.items.map(i => `<tr><td>${i.description}</td><td>${i.quantity}</td><td>${i.unitPrice.toFixed(2)}</td><td class="text-right">${i.amount.toFixed(2)}</td></tr>`).join('')}</tbody></table>
+      <div class="totals-section"><table><tbody>
+        <tr><td>Subtotal:</td><td class="text-right">${subtotal.toFixed(2)}</td></tr>
+        <tr><td>Discount (${invoiceData.discount}%):</td><td class="text-right">-${discountAmount.toFixed(2)}</td></tr>
+        <tr><td><strong>Net Total:</strong></td><td class="text-right"><strong>${netTotal.toFixed(2)}</strong></td></tr>
+      </tbody></table></div>
+      <footer><p>Thank you for your business!</p></footer>
+    </div></body></html>`;
   };
 
-  const handleSave = () => {
-    if (onSave) {
-      onSave(invoiceData);
-    }
-  };
-
-  useEffect(() => {
-    if (initialData) {
-      setInvoiceData(prev => ({
-        ...prev,
-        ...initialData,
-        items: initialData.items || prev.items,
-        billTo: initialData.billTo || prev.billTo,
-      }));
-    }
-  }, [initialData]);
-
-  useEffect(() => {
-    if (readOnly && invoiceData.invoiceNo && !hasTriggeredPrint.current) {
-      hasTriggeredPrint.current = true;
-    }
-  }, [readOnly, invoiceData.invoiceNo]);
-
+  // --- Render ---
   return (
-    <div className="bg-gray-50 min-h-screen py-8">
-      <div className="invoice-container container mx-auto px-4 max-w-5xl">
-        <div className="bg-white rounded-lg shadow-2xl p-8 border border-gray-200">
-          <header className="flex justify-between items-start pb-6 border-b border-gray-200">
-            <div className="flex items-center">
-              <img
-                src={logoSrc}
-                alt="Sewanagala Ayurvedic Logo"
-                className="h-20 w-20 mr-4 object-contain flex-shrink-0"
-                style={{ minWidth: '80px', maxWidth: '80px' }}
-                onError={() => setLogoSrc(LOGO_FALLBACK)}
-                crossOrigin="anonymous"
-              />
+    <div className="bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-5xl mx-auto bg-white rounded-2xl shadow-lg border border-gray-200">
+        <div className="p-8 md:p-10">
+          {/* --- Header --- */}
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center pb-6 mb-8 border-b-2 border-gray-100">
+            <div className="flex items-center mb-4 md:mb-0">
+              <img src={logoSrc} alt="Logo" className="h-16 w-16 mr-4" onError={() => setLogoSrc(LOGO_FALLBACK)} />
               <div>
-                <h1 className="text-2xl font-bold text-gray-800">
-                  Sewanagala Ayurvedic Drugs Manufacture (PVT) LTD
-                </h1>
-                <p className="text-sm text-gray-500">
-                  Bogaha Junction, Kiriibbanwewa, Sewanagala.
-                </p>
-                <p className="text-sm text-gray-500">Tel: 047-3133540</p>
-                <p className="text-sm text-gray-500">
-                  Email: sewanagalaayurwedaya@gmail.com
-                </p>
-                <p className="text-sm text-gray-500">
-                  Website: www.sewanagalaayurvedaya.com
-                </p>
+                <h1 className="text-2xl font-bold text-gray-800">Sewanagala Ayurvedic</h1>
+                <p className="text-sm text-gray-500">Bogaha Junction, Kiriibbanwewa, Sewanagala.</p>
               </div>
             </div>
-            <div className="flex space-x-3 flex-shrink-0 items-center">
-              <img
-                src={ISO_CERT}
-                alt="ISO Certification"
-                className="h-20 object-contain"
-                style={{ minHeight: '80px', maxHeight: '80px', width: 'auto' }}
-                crossOrigin="anonymous"
-              />
-              <img
-                src={GMP_CERT}
-                alt="GMP Certification"
-                className="h-20 object-contain"
-                style={{ minHeight: '80px', maxHeight: '80px', width: 'auto' }}
-                crossOrigin="anonymous"
-              />
+            <div className="text-xs text-gray-500 flex items-center gap-4">
+                <img src={ISO_CERT} alt="ISO" className="h-12"/>
+                <img src={GMP_CERT} alt="GMP" className="h-12"/>
             </div>
-          </header>
+          </div>
 
-          <section className="mt-8 flex justify-between items-center">
-            <div>
-              <h2 className="text-4xl font-bold text-cyan-600 tracking-wider">
-                INVOICE
-              </h2>
+          {/* --- Invoice Meta & Bill To --- */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h3 className="font-semibold text-gray-700 mb-2">BILL TO:</h3>
+              <p className="font-bold text-gray-800">{invoiceData.billTo.name}</p>
+              <p className="text-sm text-gray-600">{invoiceData.billTo.address}</p>
+              <p className="text-sm text-gray-600">{invoiceData.billTo.phone}</p>
             </div>
-            <div className="text-right text-sm text-gray-600">
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                <span className="font-semibold">DATE :</span>
-                {readOnly ? (
-                  <span className="text-left">{invoiceData.date}</span>
-                ) : (
-                  <input
-                    type="date"
-                    value={invoiceData.date}
-                    onChange={(e) =>
-                      setInvoiceData({ ...invoiceData, date: e.target.value })
-                    }
-                    className="text-left border-b border-gray-300 focus:outline-none focus:border-cyan-500"
-                  />
-                )}
-                <span className="font-semibold">INVOICE NO :</span>
-                {readOnly ? (
-                  <span className="text-left">{invoiceData.invoiceNo}</span>
-                ) : (
-                  <input
-                    type="text"
-                    value={invoiceData.invoiceNo}
-                    onChange={(e) =>
-                      setInvoiceData({ ...invoiceData, invoiceNo: e.target.value })
-                    }
-                    className="text-left border-b border-gray-300 focus:outline-none focus:border-cyan-500"
-                    placeholder="INV-00123"
-                  />
-                )}
-                <span className="font-semibold">ORDER NO :</span>
-                {readOnly ? (
-                  <span className="text-left">{invoiceData.orderNo}</span>
-                ) : (
-                  <input
-                    type="text"
-                    value={invoiceData.orderNo}
-                    onChange={(e) =>
-                      setInvoiceData({ ...invoiceData, orderNo: e.target.value })
-                    }
-                    className="text-left border-b border-gray-300 focus:outline-none focus:border-cyan-500"
-                    placeholder="ORD-00456"
-                  />
-                )}
-                <span className="font-semibold">PAYMENT METHOD :</span>
-                {readOnly ? (
-                  <span className="text-left">{invoiceData.paymentMethod}</span>
-                ) : (
-                  <select
-                    value={invoiceData.paymentMethod}
-                    onChange={(e) =>
-                      setInvoiceData({
-                        ...invoiceData,
-                        paymentMethod: e.target.value,
-                      })
-                    }
-                    className="text-left border-b border-gray-300 focus:outline-none focus:border-cyan-500"
-                  >
-                    <option value="Cash">Cash</option>
-                    <option value="Bank Transfer">Bank Transfer</option>
-                    <option value="Cheque">Cheque</option>
-                    <option value="Credit">Credit</option>
-                  </select>
-                )}
-              </div>
+            <div className="text-sm text-gray-700">
+              <div className="flex justify-between py-2 border-b"><span className="font-semibold">Invoice Number:</span><span>{invoiceData.invoiceNo}</span></div>
+              <div className="flex justify-between py-2 border-b"><span className="font-semibold">Invoice Date:</span><span>{invoiceData.date}</span></div>
+              <div className="flex justify-between py-2"><span className="font-semibold">Payment Method:</span><span>{invoiceData.paymentMethod}</span></div>
             </div>
-          </section>
+          </div>
 
-          <section className="mt-8">
-            <div className="bg-cyan-600 text-white px-3 py-2 rounded-t-lg text-sm font-semibold">
-              BILL TO
-            </div>
-            <div className="border border-t-0 border-gray-200 p-4 rounded-b-lg text-sm text-gray-600">
-              {readOnly ? (
-                <>
-                  <p>
-                    <strong>{invoiceData.billTo.name}</strong>
-                  </p>
-                  <p>{invoiceData.billTo.address}</p>
-                  <p>{invoiceData.billTo.phone}</p>
-                </>
-              ) : (
-                <>
-                  <input
-                    type="text"
-                    value={invoiceData.billTo.name}
-                    onChange={(e) =>
-                      setInvoiceData({
-                        ...invoiceData,
-                        billTo: { ...invoiceData.billTo, name: e.target.value },
-                      })
-                    }
-                    placeholder="Customer Name"
-                    className="w-full mb-2 p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                  />
-                  <input
-                    type="text"
-                    value={invoiceData.billTo.address}
-                    onChange={(e) =>
-                      setInvoiceData({
-                        ...invoiceData,
-                        billTo: { ...invoiceData.billTo, address: e.target.value },
-                      })
-                    }
-                    placeholder="Address"
-                    className="w-full mb-2 p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                  />
-                  <input
-                    type="text"
-                    value={invoiceData.billTo.phone}
-                    onChange={(e) =>
-                      setInvoiceData({
-                        ...invoiceData,
-                        billTo: { ...invoiceData.billTo, phone: e.target.value },
-                      })
-                    }
-                    placeholder="Phone Number"
-                    className="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                  />
-                </>
-              )}
-            </div>
-          </section>
-
-          <section className="mt-8">
+          {/* --- Items Table --- */}
+          <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-cyan-600 text-white">
-                  <th className="p-3 text-left font-semibold">ITEM CODE</th>
-                  <th className="p-3 text-left font-semibold w-2/5">
-                    ITEM DESCRIPTION
-                  </th>
-                  <th className="p-3 text-left font-semibold">QUANTITY</th>
-                  <th className="p-3 text-left font-semibold">UNIT PRICE</th>
-                  <th className="p-3 text-right font-semibold">AMOUNT</th>
-                  {!readOnly && (
-                    <th className="p-3 text-center font-semibold no-print">ACTION</th>
-                  )}
+              <thead className="bg-gray-100">
+                <tr>
+                  <th className="p-3 text-left font-semibold text-gray-600">Item</th>
+                  <th className="p-3 text-left font-semibold text-gray-600 w-24">Qty</th>
+                  <th className="p-3 text-left font-semibold text-gray-600 w-32">Price</th>
+                  <th className="p-3 text-right font-semibold text-gray-600 w-32">Total</th>
+                  {!readOnly && <th className="p-3 w-12"></th>}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
+              <tbody>
                 {invoiceData.items.map((item, index) => (
-                  <tr key={index}>
-                    <td className="p-3">
-                      {readOnly ? (
-                        item.itemCode
-                      ) : (
-                        <input
-                          type="text"
-                          value={item.itemCode}
-                          onChange={(e) =>
-                            handleItemChange(index, 'itemCode', e.target.value)
-                          }
-                          placeholder="Code"
-                          className="w-full p-1 border rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                        />
-                      )}
-                    </td>
-                    <td className="p-3">
-                      {readOnly ? (
-                        item.description
-                      ) : (
-                        <input
-                          type="text"
-                          value={item.description}
-                          onChange={(e) =>
-                            handleItemChange(index, 'description', e.target.value)
-                          }
-                          placeholder="Description"
-                          className="w-full p-1 border rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                        />
-                      )}
-                    </td>
-                    <td className="p-3">
-                      {readOnly ? (
-                        item.quantity
-                      ) : (
-                        <input
-                          type="number"
-                          value={item.quantity}
-                          onChange={(e) =>
-                            handleItemChange(
-                              index,
-                              'quantity',
-                              parseFloat(e.target.value) || 0
-                            )
-                          }
-                          placeholder="0"
-                          min="0"
-                          className="w-full p-1 border rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                        />
-                      )}
-                    </td>
-                    <td className="p-3">
-                      {readOnly ? (
-                        `Rs. ${item.unitPrice.toFixed(2)}`
-                      ) : (
-                        <input
-                          type="number"
-                          value={item.unitPrice}
-                          onChange={(e) =>
-                            handleItemChange(
-                              index,
-                              'unitPrice',
-                              parseFloat(e.target.value) || 0
-                            )
-                          }
-                          placeholder="0.00"
-                          min="0"
-                          step="0.01"
-                          className="w-full p-1 border rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                        />
-                      )}
-                    </td>
-                    <td className="p-3 text-right">Rs. {item.amount.toFixed(2)}</td>
-                    {!readOnly && (
-                      <td className="p-3 text-center no-print">
-                        <button
-                          onClick={() => removeItem(index)}
-                          className="text-red-600 hover:text-red-800 transition-colors"
-                          disabled={invoiceData.items.length === 1}
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
-                    )}
+                  <tr key={index} className="border-b">
+                    <td className="p-3"><input type="text" value={item.description} onChange={e => handleItemChange(index, 'description', e.target.value)} className="w-full p-1 bg-transparent border-none focus:ring-0" readOnly={readOnly}/></td>
+                    <td className="p-3"><input type="number" value={item.quantity} onChange={e => handleItemChange(index, 'quantity', Number(e.target.value))} className="w-full p-1 bg-transparent border-none focus:ring-0" readOnly={readOnly}/></td>
+                    <td className="p-3"><input type="number" value={item.unitPrice} onChange={e => handleItemChange(index, 'unitPrice', Number(e.target.value))} className="w-full p-1 bg-transparent border-none focus:ring-0" readOnly={readOnly}/></td>
+                    <td className="p-3 text-right">{item.amount.toFixed(2)}</td>
+                    {!readOnly && <td className="p-3 text-center"><button onClick={() => removeItem(index)} className="text-red-500 hover:text-red-700"><Trash2 size={16}/></button></td>}
                   </tr>
                 ))}
               </tbody>
             </table>
-            {!readOnly && (
-              <button
-                onClick={addItem}
-                className="no-print mt-4 bg-cyan-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-cyan-700 transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500 flex items-center gap-2"
-              >
-                <Plus className="w-4 h-4" />
-                Add Item
-              </button>
-            )}
-          </section>
-
-          <section className="mt-6 flex justify-end">
-            <div className="w-full max-w-xs space-y-2 text-sm text-gray-700">
-              <div className="flex justify-between items-center bg-gray-100 p-2 rounded-md">
-                <span className="font-semibold">SUBTOTAL:</span>
-                <span>Rs. {calculateSubtotal().toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between items-center p-2">
-                <span className="font-semibold">DISCOUNT (%):</span>
-                {readOnly ? (
-                  <span>{invoiceData.discount}%</span>
-                ) : (
-                  <input
-                    type="number"
-                    value={invoiceData.discount}
-                    onChange={(e) =>
-                      setInvoiceData({
-                        ...invoiceData,
-                        discount: parseFloat(e.target.value) || 0,
-                      })
-                    }
-                    min="0"
-                    max="100"
-                    className="w-20 text-right bg-transparent border-b border-gray-300 focus:outline-none focus:border-cyan-500"
-                  />
-                )}
-              </div>
-              <div className="flex justify-between items-center bg-gray-200 p-3 rounded-md font-bold text-base">
-                <span>NET TOTAL:</span>
-                <span>Rs. {calculateNetTotal().toFixed(2)}</span>
-              </div>
+          </div>
+          {!readOnly && <button onClick={addItem} className="mt-4 flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800"><Plus size={16}/> Add Item</button>}
+          
+          {/* --- Totals --- */}
+          <div className="flex justify-end mt-8">
+            <div className="w-full max-w-sm space-y-2 text-sm">
+              <div className="flex justify-between p-2 bg-gray-50 rounded-t-lg"><span className="font-semibold">Subtotal:</span><span>{calculateSubtotal().toFixed(2)}</span></div>
+              <div className="flex justify-between p-2"><span className="font-semibold">Discount:</span><span><input type="number" value={invoiceData.discount} onChange={e => setInvoiceData({...invoiceData, discount: Number(e.target.value)})} className="w-20 text-right bg-transparent border-none focus:ring-0" readOnly={readOnly}/>%</span></div>
+              <div className="flex justify-between p-3 bg-gray-100 rounded-b-lg text-base font-bold"><span >Net Total:</span><span>{calculateNetTotal().toFixed(2)}</span></div>
             </div>
-          </section>
-
-          <footer className="mt-16 pt-8 border-t border-gray-200 text-center text-gray-500 text-sm">
-            <div className="flex justify-between items-center">
-              <div className="w-1/3">
-                <p className="border-t border-gray-400 pt-2 mt-8">PREPARED BY</p>
-              </div>
-              <div className="w-1/3">
-                <p className="border-t border-gray-400 pt-2 mt-8">APPROVED BY</p>
-              </div>
-              <div className="w-1/3">
-                <p className="border-t border-gray-400 pt-2 mt-8">CUSTOMER</p>
-              </div>
-            </div>
-            <p className="mt-12 font-semibold">Thank You For Your Business!</p>
-          </footer>
+          </div>
         </div>
 
-        <div className="text-center my-6 no-print flex gap-4 justify-center">
-          <button
-            onClick={handlePrint}
-            className="bg-gray-700 text-white px-6 py-2 rounded-lg hover:bg-gray-800 transition-colors focus:outline-none focus:ring-2 focus:ring-gray-500 flex items-center gap-2"
-          >
-            <Printer className="w-4 h-4" />
-            Print Invoice
-          </button>
+        {/* --- Actions --- */}
+        <div className="bg-gray-50 px-8 py-5 flex justify-end items-center gap-4 rounded-b-2xl border-t">
+          <button onClick={handlePrint} className="flex items-center gap-2 bg-gray-600 text-white px-5 py-2 rounded-lg hover:bg-gray-700 font-semibold transition-colors"><Printer size={16}/> Print</button>
           {!readOnly && onSave && (
-            <button
-              onClick={handleSave}
-              className="bg-cyan-600 text-white px-6 py-2 rounded-lg hover:bg-cyan-700 transition-colors focus:outline-none focus:ring-2 focus:ring-cyan-500"
-            >
-              Save Invoice
+            <button onClick={handleSave} disabled={onSaveLoading} className="flex items-center gap-2 bg-blue-600 text-white px-5 py-2 rounded-lg hover:bg-blue-700 disabled:bg-blue-400 font-semibold transition-colors">
+              {onSaveLoading ? <><Loader className="animate-spin" size={16}/> Saving...</> : 'Save & Finalize Invoice'}
             </button>
           )}
         </div>
       </div>
-
-      <style>{`
-        img {
-          display: block;
-        }
-
-        @media print {
-          @page {
-            margin: 0.5cm;
-            size: A4;
-          }
-
-          * {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-
-          html, body {
-            margin: 0;
-            padding: 0;
-            background: white !important;
-            overflow: visible !important;
-          }
-
-          body > div:not(:has(.invoice-container)),
-          header:not(.invoice-container header),
-          nav,
-          footer:not(.invoice-container footer),
-          .sidebar,
-          .navigation,
-          .menu,
-          .no-print {
-            display: none !important;
-          }
-
-          .invoice-container {
-            position: static !important;
-            width: 100% !important;
-            max-width: 100% !important;
-            box-shadow: none !important;
-            margin: 0 !important;
-            padding: 10px !important;
-            border: none !important;
-          }
-
-          .invoice-container > div {
-            box-shadow: none !important;
-            border: none !important;
-            border-radius: 0 !important;
-          }
-
-          .bg-gray-50,
-          .bg-white {
-            background-color: white !important;
-            padding: 0 !important;
-            min-height: auto !important;
-          }
-
-          img {
-            display: block !important;
-            max-width: 100%;
-            height: auto;
-          }
-        }
-      `}</style>
     </div>
   );
 };
-
 export default InvoiceGenerator;

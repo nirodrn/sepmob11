@@ -32,6 +32,7 @@ import { DistributorRepDispatch } from './pages/Distributor/DistributorRepDispat
 import DistributorInvoicesMain from './pages/Distributor/DistributorInvoicesMain';
 
 import { DRRequests } from './pages/DirectRepresentative/DRRequests';
+import DRInvoicesPage from './pages/DirectRepresentative/DRInvoicesPage';
 import { RoleBasedInventory } from './pages/RoleBasedInventory';
 // Role-specific dashboards
 import { DRDashboard } from './pages/DirectRepresentative/DRDashboard';
@@ -127,6 +128,7 @@ function App() {
             </Route>
 
             <Route path="/dr/requests" element={<ProtectedPage><DRRequests /></ProtectedPage>} />
+            <Route path="/dr/invoices" element={<ProtectedPage><DRInvoicesPage /></ProtectedPage>} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>

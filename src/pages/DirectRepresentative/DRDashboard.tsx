@@ -2,10 +2,10 @@ import React, { useState } from 'react';
 import { DashboardCards, getDashboardCards } from '../../components/Dashboard/DashboardCards';
 import { RecentActivity } from '../../components/Dashboard/RecentActivity';
 import { NewProductRequest } from '../../components/DirectRepresentative/NewProductRequest';
-import { InvoiceGenerator } from '../../components/DirectRepresentative/InvoiceGenerator';
+import { DRInvoiceGenerator } from '../../components/DirectRepresentative/DRInvoiceGenerator';
 import { ApprovedRequestsWithPricing } from '../../components/Common/ApprovedRequestsWithPricing';
 import { useAuth } from '../../context/AuthContext';
-import { Plus, FileText, TrendingUp } from 'lucide-react';
+import { Plus, FileText, TrendingUp, ArrowLeft } from 'lucide-react';
 
 export function DRDashboard() {
   const { userData } = useAuth();
@@ -14,16 +14,26 @@ export function DRDashboard() {
 
   if (!userData) return null;
 
+  // If user clicks "Generate Invoice", show the correct component
+  if (showInvoiceGenerator) {
+    return (
+      <div>
+        <button 
+          onClick={() => setShowInvoiceGenerator(false)}
+          className="mb-4 flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-800 rounded-lg hover:bg-gray-200 transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to Dashboard
+        </button>
+        <DRInvoiceGenerator />
+      </div>
+    );
+  }
+
   const cards = getDashboardCards(userData.role);
 
   const handleRequestSuccess = () => {
-    // Refresh data or show success message
     console.log('Request created successfully');
-  };
-
-  const handleInvoiceSuccess = () => {
-    // Refresh data or show success message
-    console.log('Invoice created successfully');
   };
 
   return (
@@ -89,11 +99,7 @@ export function DRDashboard() {
         onSuccess={handleRequestSuccess}
       />
 
-      <InvoiceGenerator
-        isOpen={showInvoiceGenerator}
-        onClose={() => setShowInvoiceGenerator(false)}
-        onSuccess={handleInvoiceSuccess}
-      />
+      {/* The incorrect InvoiceGenerator has been removed */}
     </div>
   );
 }

@@ -23,8 +23,10 @@ export function Layout({ children }: LayoutProps) {
       </div>
 
       {/* --- Mobile Bottom Navigation --- */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50">
-        <Navigation />
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200">
+        <div className="overflow-x-auto whitespace-nowrap">
+          <Navigation />
+        </div>
       </div>
     </div>
   );

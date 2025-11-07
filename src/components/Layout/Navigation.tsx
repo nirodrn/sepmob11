@@ -25,9 +25,15 @@ const navigationItems: NavItem[] = [
     roles: ['DirectRepresentative']
   },
   {
+    name: 'Invoices',
+    href: '/dr/invoices',
+    icon: FileText,
+    roles: ['DirectRepresentative']
+  },
+  {
     name: 'Product Requests',
     href: '/distributor/requests',
-    icon: ShoppingCart,
+    icon: ShoppingCart, // Corrected from Shoppingcart
     roles: ['Distributor']
   },
   {
@@ -82,7 +88,7 @@ const navigationItems: NavItem[] = [
     name: 'Invoices',
     href: '/invoices',
     icon: FileText,
-    roles: ['DirectRepresentative', 'DirectShowroomStaff']
+    roles: ['DirectShowroomStaff']
   },
   {
     name: 'Invoices',
@@ -136,7 +142,7 @@ export function Navigation() {
       <div className="p-2 md:p-4">
         <ul className="flex justify-around md:flex-col md:space-y-2">
           {allowedItems.map((item) => (
-            <li key={item.name} className="flex-1 md:flex-none">
+            <li key={`${item.name}-${item.href}`} className="flex-1 md:flex-none">
               <NavLink
                 to={item.href}
                 className={({ isActive }) =>

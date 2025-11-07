@@ -1,9 +1,9 @@
-import React, { useState, useMemo } from 'react';
-import { useFirebaseData } from '../../hooks/useFirebaseData';
+import React, { useState, useMemo, useEffect } from 'react';
+import { useFirebaseData, useFirebaseActions } from '../../hooks/useFirebaseData';
 import { useAuth } from '../../context/AuthContext';
 import { LoadingSpinner } from '../Common/LoadingSpinner';
 import { Badge } from '../Common/Badge';
-import { Package, Search, Merge } from 'lucide-react';
+import { Package, Search, Merge, AlertTriangle } from 'lucide-react';
 import { consolidateDRStock, formatConsolidationReport } from '../../utils/consolidateDRStock';
 
 interface DRStockSummary {
@@ -15,29 +15,31 @@ interface DRStockSummary {
   entryCount: number;
   firstClaimedAt: string;
   lastUpdated: string;
+  costPrice: number;
+  sellingPrice: number;
 }
 
 export function DRStockManagement() {
   const { userData } = useAuth();
   const { data: drStockData, loading: drStockLoading } = useFirebaseData<any>('drstock');
+  const { updateData } = useFirebaseActions();
+  
   const [searchTerm, setSearchTerm] = useState('');
   const [isConsolidating, setIsConsolidating] = useState(false);
   const [consolidationReport, setConsolidationReport] = useState<string>('');
   const [showReport, setShowReport] = useState(false);
+  const [localStock, setLocalStock] = useState<DRStockSummary[]>([]);
+  const [isSaving, setIsSaving] = useState<string | null>(null);
 
-  // Get DR stock summary for current user - consolidated by product name
   const drStockSummary = useMemo(() => {
     if (!drStockData || !userData) return [];
-
     const userEntriesData = drStockData.users?.[userData.id]?.entries;
     if (!userEntriesData) return [];
 
-    // Group by product name instead of product ID
-    const consolidatedByName: { [productName: string]: DRStockSummary } = {};
+    const consolidatedByName: { [productName: string]: DRStockSummary & { entries: any[] } } = {};
 
     Object.values(userEntriesData).forEach((entry: any) => {
       const productName = entry.productName;
-
       if (!consolidatedByName[productName]) {
         consolidatedByName[productName] = {
           productId: entry.productId,
@@ -46,180 +48,151 @@ export function DRStockManagement() {
           availableQuantity: 0,
           usedQuantity: 0,
           entryCount: 0,
-          firstClaimedAt: entry.claimedAt || entry.receivedAt || new Date().toISOString(),
-          lastUpdated: entry.lastUpdated || new Date().toISOString()
+          firstClaimedAt: new Date().toISOString(),
+          lastUpdated: new Date(0).toISOString(),
+          costPrice: entry.unitPrice || 0,
+          sellingPrice: entry.finalPrice || entry.unitPrice || 0,
+          entries: []
         };
       }
-
       consolidatedByName[productName].totalQuantity += entry.quantity || 0;
       consolidatedByName[productName].availableQuantity += entry.availableQuantity || 0;
       consolidatedByName[productName].usedQuantity += entry.usedQuantity || 0;
       consolidatedByName[productName].entryCount += 1;
+      consolidatedByName[productName].entries.push(entry);
 
-      // Keep earliest claimedAt
-      const entryDate = new Date(entry.claimedAt || entry.receivedAt || 0);
-      const currentDate = new Date(consolidatedByName[productName].firstClaimedAt);
-      if (entryDate < currentDate) {
+      if (new Date(entry.claimedAt || entry.receivedAt || 0) < new Date(consolidatedByName[productName].firstClaimedAt)) {
         consolidatedByName[productName].firstClaimedAt = entry.claimedAt || entry.receivedAt;
       }
-
-      // Keep latest lastUpdated
-      const entryUpdateDate = new Date(entry.lastUpdated || 0);
-      const currentUpdateDate = new Date(consolidatedByName[productName].lastUpdated);
-      if (entryUpdateDate > currentUpdateDate) {
+      if (new Date(entry.lastUpdated || 0) > new Date(consolidatedByName[productName].lastUpdated)) {
         consolidatedByName[productName].lastUpdated = entry.lastUpdated;
+        consolidatedByName[productName].sellingPrice = entry.finalPrice || entry.unitPrice || 0;
+        consolidatedByName[productName].costPrice = entry.unitPrice || 0;
       }
     });
 
-    return Object.values(consolidatedByName);
+    return Object.values(consolidatedByName).map(({ entries, ...rest }) => rest);
   }, [drStockData, userData]);
+  
+  useEffect(() => {
+    setLocalStock(drStockSummary);
+  }, [drStockSummary]);
+  
+  const handlePriceChange = (productName: string, newPrice: number) => {
+    setLocalStock(prev => prev.map(item => item.productName === productName ? { ...item, sellingPrice: newPrice } : item));
+  };
+  
+  const handlePriceUpdate = async (productName: string) => {
+    if (!userData || !drStockData) return;
+    const product = localStock.find(p => p.productName === productName);
+    if (!product) return;
 
-  if (drStockLoading) {
-    return <LoadingSpinner text="Loading stock data..." />;
-  }
+    setIsSaving(productName);
+    try {
+      const userEntries = drStockData.users?.[userData.id]?.entries;
+      if (!userEntries) throw new Error("Stock entries not found");
 
-  const filteredDRSummary = drStockSummary.filter(item =>
-    item.productName?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+      const updates: { [path: string]: any } = {};
+      Object.entries(userEntries).forEach(([entryId, entry]: [string, any]) => {
+        if (entry.productName === productName) {
+          updates[`users/${userData.id}/entries/${entryId}/finalPrice`] = product.sellingPrice;
+        }
+      });
+      
+      if (Object.keys(updates).length > 0) {
+        await updateData('drstock', updates);
+      }
+    } catch (error) {
+      console.error("Failed to update price:", error);
+      alert(`Could not update price for ${productName}.`);
+      setLocalStock(drStockSummary); // Revert on failure
+    } finally {
+      setIsSaving(null);
+    }
+  };
 
   const handleConsolidate = async () => {
-    if (!window.confirm('This will merge duplicate products in your inventory. Continue?')) {
-      return;
-    }
-
+    if (!window.confirm('This will merge duplicate products in your inventory. Continue?')) return;
     setIsConsolidating(true);
-    setConsolidationReport('');
-    setShowReport(false);
-
     try {
       const report = await consolidateDRStock();
-      const formattedReport = formatConsolidationReport(report);
-      setConsolidationReport(formattedReport);
+      setConsolidationReport(formatConsolidationReport(report));
       setShowReport(true);
-
-      // Reload the page after a short delay to show updated data
-      setTimeout(() => {
-        window.location.reload();
-      }, 3000);
+      setTimeout(() => window.location.reload(), 3000);
     } catch (error: any) {
       alert('Failed to consolidate stock: ' + error.message);
-      console.error('Consolidation error:', error);
     } finally {
       setIsConsolidating(false);
     }
   };
+  
+  if (drStockLoading) return <LoadingSpinner text="Loading stock data..." />;
+
+  const filteredDRSummary = localStock.filter(item =>
+    item.productName?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
     <div className="space-y-4">
-      {/* Consolidation Report Modal */}
       {showReport && consolidationReport && (
         <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
-          <div className="flex justify-between items-start mb-2">
-            <h3 className="font-medium text-green-800">Consolidation Complete!</h3>
-            <button
-              onClick={() => setShowReport(false)}
-              className="text-green-600 hover:text-green-800"
-            >
-              ✕
-            </button>
-          </div>
-          <p className="text-sm text-green-700 mb-3">
-            Duplicate products have been merged. Page will reload shortly.
-          </p>
-          <pre className="text-xs text-gray-700 whitespace-pre-wrap font-mono overflow-auto max-h-48 bg-white p-3 rounded border border-green-200">
-            {consolidationReport}
-          </pre>
+          <h3 className="font-medium text-green-800">Consolidation Complete!</h3>
+          <pre className="text-xs text-gray-700 mt-2">{consolidationReport}</pre>
         </div>
       )}
 
-      {/* Header with consolidate button */}
       <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between">
         <div className="flex-1">
           <h2 className="text-lg font-semibold text-gray-900">Consolidated Stock</h2>
-          <p className="text-sm text-gray-600">Products grouped with combined quantities</p>
+          <p className="text-sm text-gray-600">Products grouped with combined quantities and prices.</p>
         </div>
-
-        <button
-          onClick={handleConsolidate}
-          disabled={isConsolidating}
-          className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-        >
-          {isConsolidating ? (
-            <>
-              <span className="animate-spin">⟳</span>
-              <span className="text-sm">Merging...</span>
-            </>
-          ) : (
-            <>
-              <Merge className="w-4 h-4" />
-              <span className="text-sm">Merge Duplicates</span>
-            </>
-          )}
+        <button onClick={handleConsolidate} disabled={isConsolidating} className="flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400">
+          {isConsolidating ? 'Merging...' : <><Merge className="w-4 h-4" /> Merge Duplicates</>}
         </button>
       </div>
 
-      <div className="relative">
-        <Search className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
-        <input
-          type="text"
-          placeholder="Search products..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-        />
-      </div>
+      <div className="relative"><Search className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" /><input type="text" placeholder="Search products..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-10 pr-4 py-2 border rounded-lg w-full"/></div>
 
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+      <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
-            <thead className="bg-gray-50 border-b border-gray-200">
+            <thead className="bg-gray-50 border-b">
               <tr>
-                <th className="text-left py-3 px-4 font-medium text-gray-900">Product</th>
-                <th className="text-left py-3 px-4 font-medium text-gray-900">Total Stock</th>
-                <th className="text-left py-3 px-4 font-medium text-gray-900">Available</th>
-                <th className="text-left py-3 px-4 font-medium text-gray-900">Used</th>
-                <th className="text-left py-3 px-4 font-medium text-gray-900">Status</th>
-                <th className="text-left py-3 px-4 font-medium text-gray-900">Entries</th>
+                <th className="text-left p-3 font-medium">Product</th>
+                <th className="text-left p-3 font-medium">Available</th>
+                <th className="text-left p-3 font-medium">Cost Price</th>
+                <th className="text-left p-3 font-medium">Selling Price</th>
+                <th className="text-left p-3 font-medium">Status</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-200">
+            <tbody className="divide-y">
               {filteredDRSummary.map((item) => (
                 <tr key={item.productName} className="hover:bg-gray-50">
-                  <td className="py-3 px-4">
-                    <div>
-                      <p className="font-medium text-gray-900">{item.productName}</p>
-                      <p className="text-sm text-gray-500">
-                        First received: {new Date(item.firstClaimedAt).toLocaleDateString()}
-                      </p>
+                  <td className="p-3"><p className="font-medium">{item.productName}</p><p className="text-sm text-gray-500">First received: {new Date(item.firstClaimedAt).toLocaleDateString()}</p></td>
+                  <td className="p-3"><span className="font-semibold text-lg text-green-600">{item.availableQuantity}</span></td>
+                  <td className="p-3">Rs {item.costPrice.toFixed(2)}</td>
+                  <td className="p-3">
+                    <div className="relative">
+                      <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500">Rs</span>
+                      <input 
+                        type="number"
+                        value={item.sellingPrice}
+                        onChange={(e) => handlePriceChange(item.productName, parseFloat(e.target.value) || 0)}
+                        onBlur={() => handlePriceUpdate(item.productName)}
+                        className="pl-8 pr-2 py-1 border rounded-md w-32"
+                        disabled={isSaving === item.productName}
+                      />
+                       {isSaving === item.productName && <span className="animate-spin absolute right-2 top-1/2 -translate-y-1/2">⟳</span>}
                     </div>
                   </td>
-                  <td className="py-3 px-4">
-                    <span className="font-semibold text-lg text-gray-900">{item.totalQuantity}</span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="font-semibold text-green-600">{item.availableQuantity}</span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="font-semibold text-orange-600">{item.usedQuantity}</span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <Badge variant={item.availableQuantity > 0 ? "success" : "warning"}>
-                      {item.availableQuantity > 0 ? "Available" : "Depleted"}
-                    </Badge>
-                  </td>
-                  <td className="py-3 px-4">
-                    <Badge variant="info">{item.entryCount} {item.entryCount === 1 ? 'entry' : 'entries'}</Badge>
-                  </td>
+                  <td className="p-3"><Badge variant={item.availableQuantity > 0 ? "success" : "warning"}>{item.availableQuantity > 0 ? "Available" : "Depleted"}</Badge></td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
         {filteredDRSummary.length === 0 && (
-          <div className="p-8 text-center">
-            <Package className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-500">No stock found. Stock from approved requests will appear here.</p>
-          </div>
+          <div className="p-8 text-center text-gray-500"><Package className="w-12 h-12 mx-auto mb-4" /><p>No stock found.</p></div>
         )}
       </div>
     </div>
