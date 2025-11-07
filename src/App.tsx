@@ -116,7 +116,7 @@ function App() {
             <Route path="/distributor" element={<ProtectedPage><Outlet /></ProtectedPage>}>
               <Route path="requests" element={<DistributorRequests />} />
               <Route path="representatives" element={<DistributorRepManagement />} />
-              <Rout  path="rep-requests" element={<DistributorRepManagementPage />} />
+              <Route path="rep-requests" element={<DistributorRepManagementPage />} />
               <Route path="rep-dispatch" element={<DistributorRepDispatch />} />
               <Route path="stock-dispatch" element={<DistributorStockDispatch />} />
               <Route path="invoices" element={<DistributorInvoicesMain />} />
